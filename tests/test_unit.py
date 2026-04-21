@@ -561,3 +561,620 @@ class TestConfig:
             f"?sslmode={test_config.db_sslmode}"
         )
         assert test_config.conn_string == expected
+
+
+class TestSearchFields:
+    """Test search() with different field modes."""
+
+    def test_search_lean_fields(self, test_config, mock_embedding):
+        """Test search with fields='lean' returns abbreviated keys."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                {
+                    "doc_id": "abc123",
+                    "content": "Test memory",
+                    "category": "test",
+                    "source": "manual",
+                    "tags": None,
+                    "metadata": {},
+                    "importance": 1.0,
+                    "created_at": datetime.now(),
+                    "access_count": 0,
+                    "similarity": 0.85,
+                }
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            results = engine.search("test query", fields="lean")
+            assert len(results) == 1
+            result = results[0]
+            # Should have abbreviated keys
+            assert "c" in result
+            assert "cat" in result
+            assert "s" in result
+            assert "src" in result
+            assert "id" in result
+            # Should NOT have full keys
+            assert "content" not in result
+            assert "category" not in result
+            assert "similarity" not in result
+            assert "source" not in result
+            assert "doc_id" not in result
+            # Check values
+            assert result["c"] == "Test memory"
+            assert result["cat"] == "test"
+            assert result["s"] == 0.85
+            assert result["src"] == "manual"
+            assert result["id"] == "abc123"
+
+    def test_search_ids_fields(self, test_config, mock_embedding):
+        """Test search with fields='ids' returns list of strings."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                {
+                    "doc_id": "abc123",
+                    "content": "Memory 1",
+                    "category": "test",
+                    "source": None,
+                    "tags": None,
+                    "metadata": {},
+                    "importance": 1.0,
+                    "created_at": datetime.now(),
+                    "access_count": 0,
+                    "similarity": 0.85,
+                },
+                {
+                    "doc_id": "def456",
+                    "content": "Memory 2",
+                    "category": "test",
+                    "source": None,
+                    "tags": None,
+                    "metadata": {},
+                    "importance": 1.0,
+                    "created_at": datetime.now(),
+                    "access_count": 0,
+                    "similarity": 0.70,
+                }
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            results = engine.search("test query", fields="ids")
+            assert isinstance(results, list)
+            assert len(results) == 2
+            assert all(isinstance(r, str) for r in results)
+            assert results == ["abc123", "def456"]
+
+    def test_search_full_fields_strips_tags_none_and_metadata(self, test_config, mock_embedding):
+        """Test search with fields='full' strips tags:None and metadata.saved_by/saved_at."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                {
+                    "doc_id": "abc123",
+                    "content": "Test memory",
+                    "category": "test",
+                    "source": None,
+                    "tags": None,
+                    "metadata": {"saved_by": "context_engine", "saved_at": "2026-01-01T00:00:00", "key": "val"},
+                    "importance": 1.0,
+                    "created_at": datetime.now(),
+                    "access_count": 0,
+                    "similarity": 0.85,
+                }
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            results = engine.search("test query", fields="full")
+            assert len(results) == 1
+            result = results[0]
+            # tags should be stripped entirely since it was None
+            assert "tags" not in result
+            # metadata should have saved_by/saved_at removed but keep other keys
+            assert "saved_by" not in result["metadata"]
+            assert "saved_at" not in result["metadata"]
+            assert result["metadata"]["key"] == "val"
+
+
+class TestListFields:
+    """Test list() with different field modes."""
+
+    def test_list_lean_fields(self, test_config, mock_embedding):
+        """Test list with fields='lean' returns abbreviated keys."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                {
+                    "doc_id": "abc123",
+                    "content": "Memory 1",
+                    "category": "test",
+                    "source": "manual",
+                    "tags": ["tag1"],
+                    "metadata": {},
+                    "importance": 1.0,
+                    "created_at": datetime(2026, 4, 20, 10, 30, 0),
+                    "access_count": 5,
+                    "expires_at": None,
+                }
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            results = engine.list(fields="lean")
+            assert len(results) == 1
+            result = results[0]
+            # Should have abbreviated keys
+            assert "c" in result
+            assert "cat" in result
+            assert "d" in result
+            assert "id" in result
+            # Should NOT have full keys
+            assert "content" not in result
+            assert "category" not in result
+            assert "created_at" not in result
+            assert "doc_id" not in result
+            # Check date formatting
+            assert result["d"] == "2026-04-20"
+            assert result["c"] == "Memory 1"
+            assert result["cat"] == "test"
+            assert result["id"] == "abc123"
+
+    def test_list_ids_fields(self, test_config, mock_embedding):
+        """Test list with fields='ids' returns list of strings."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                {"doc_id": "abc123", "content": "M1", "category": "test",
+                 "source": None, "tags": None, "metadata": {},
+                 "importance": 1.0, "created_at": datetime.now(),
+                 "access_count": 0, "expires_at": None},
+                {"doc_id": "def456", "content": "M2", "category": "work",
+                 "source": None, "tags": None, "metadata": {},
+                 "importance": 1.0, "created_at": datetime.now(),
+                 "access_count": 0, "expires_at": None},
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            results = engine.list(fields="ids")
+            assert isinstance(results, list)
+            assert len(results) == 2
+            assert all(isinstance(r, str) for r in results)
+            assert results == ["abc123", "def456"]
+
+
+class TestSearchOne:
+    """Test search_one() method."""
+
+    def test_search_one_returns_content(self, test_config, mock_embedding):
+        """Test that search_one returns content string of best match."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                {
+                    "doc_id": "abc123",
+                    "content": "Best match content",
+                    "category": "test",
+                    "source": None,
+                    "tags": None,
+                    "metadata": {},
+                    "importance": 1.0,
+                    "created_at": datetime.now(),
+                    "access_count": 0,
+                    "similarity": 0.92,
+                }
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            result = engine.search_one("test query")
+            assert result == "Best match content"
+
+    def test_search_one_returns_none_no_match(self, test_config, mock_embedding):
+        """Test that search_one returns None when no match above threshold."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = []
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            result = engine.search_one("nonexistent query")
+            assert result is None
+
+
+class TestRecall:
+    """Test recall() method."""
+
+    def test_recall_uses_lean_fields_and_lower_threshold(self, test_config, mock_embedding):
+        """Test that recall calls search with lean fields and 0.3 default."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                {
+                    "doc_id": "abc123",
+                    "content": "Recalled memory",
+                    "category": "test",
+                    "source": None,
+                    "tags": None,
+                    "metadata": {},
+                    "importance": 1.0,
+                    "created_at": datetime.now(),
+                    "access_count": 0,
+                    "similarity": 0.35,
+                }
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            results = engine.recall("test query")
+            assert len(results) == 1
+            # Should have lean keys
+            result = results[0]
+            assert "c" in result
+            assert "cat" in result
+            assert "s" in result
+            assert "id" in result
+            # Should NOT have full keys
+            assert "content" not in result
+
+
+class TestPeek:
+    """Test peek() method."""
+
+    def test_peek_existing_doc(self, test_config, mock_embedding):
+        """Test that peek returns full dict for existing doc_id."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchone.return_value = {
+                "doc_id": "abc123",
+                "content": "Specific memory content",
+                "category": "test",
+                "source": "manual",
+                "tags": None,
+                "metadata": {"key": "val"},
+                "importance": 2.0,
+                "created_at": datetime(2026, 4, 20),
+            }
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            result = engine.peek("abc123")
+            assert result is not None
+            assert result["doc_id"] == "abc123"
+            assert result["content"] == "Specific memory content"
+            assert result["category"] == "test"
+            # tags:None should be stripped
+            assert "tags" not in result
+
+    def test_peek_nonexistent_doc(self, test_config, mock_embedding):
+        """Test that peek returns None for nonexistent doc_id."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchone.return_value = None
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            result = engine.peek("nonexistent-id")
+            assert result is None
+
+
+class TestCount:
+    """Test count() method."""
+
+    def test_count_returns_integer(self, test_config, mock_embedding):
+        """Test that count returns an integer."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchone.return_value = [42]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            result = engine.count()
+            assert isinstance(result, int)
+            assert result == 42
+
+    def test_count_with_category_filter(self, test_config, mock_embedding):
+        """Test that count with category includes filter in query."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchone.return_value = [10]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            result = engine.count(category="infrastructure")
+            assert result == 10
+            # Check that category filter was included in SQL
+            call_args = mock_cur.execute.call_args[0][0]
+            assert "category" in call_args
+
+
+class TestStats:
+    """Test stats() method."""
+
+    def test_stats_returns_expected_keys(self, test_config, mock_embedding):
+        """Test that stats returns dict with expected keys."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+
+            # Mock three fetchone/fetchall calls: total count, categories, sizes, last_saved
+            mock_cur.fetchone.side_effect = [
+                (100,),                             # total count
+                (datetime(2026, 4, 20),),           # last_saved (MAX created_at)
+            ]
+            mock_cur.fetchall.side_effect = [
+                [("general", 80), ("infra", 20)],  # categories
+                [(50,), (30,), (20,)],               # content lengths
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False
+            )
+
+            result = engine.stats()
+            assert "count" in result
+            assert "categories" in result
+            assert "size_estimate_kb" in result
+            assert "last_saved" in result
+            assert result["count"] == 100
+            assert isinstance(result["categories"], dict)
+            assert isinstance(result["size_estimate_kb"], float)
+
+
+class TestEmbeddingCache:
+    """Test embedding cache functionality."""
+
+    def test_embedding_cache_caches_results(self, test_config, mock_embedding):
+        """Test that _embed() caches results and doesn't call provider twice for same text."""
+        engine = ContextEngine(
+            config=test_config,
+            embedding_provider=mock_embedding,
+            auto_init=False,
+        )
+
+        # Call _embed twice with same text
+        result1 = engine._embed("hello world")
+        result2 = engine._embed("hello world")
+
+        # Provider should only be called once
+        assert mock_embedding.embed.call_count == 1
+        assert result1 == result2
+
+    def test_embedding_cache_disabled(self, test_config, mock_embedding):
+        """Test that with cache_embeddings=False, provider is called every time."""
+        engine = ContextEngine(
+            config=test_config,
+            embedding_provider=mock_embedding,
+            auto_init=False,
+            cache_embeddings=False,
+        )
+
+        engine._embed("hello world")
+        engine._embed("hello world")
+
+        # Provider should be called twice since cache is disabled
+        assert mock_embedding.embed.call_count == 2
+        # Stats should show disabled
+        stats = engine.embedding_cache_stats
+        assert stats["enabled"] is False
+        assert stats["size"] == 0
+
+    def test_embedding_cache_max_size(self, test_config, mock_embedding):
+        """Test that cache evicts oldest entries when exceeding 128."""
+        # Make each embed call return a unique vector
+        call_count = [0]
+        def make_vector(text):
+            call_count[0] += 1
+            return [float(call_count[0])] + [0.0] * 767
+
+        mock_embedding.embed.side_effect = make_vector
+
+        engine = ContextEngine(
+            config=test_config,
+            embedding_provider=mock_embedding,
+            auto_init=False,
+        )
+
+        # Insert 129 unique entries
+        for i in range(129):
+            engine._embed(f"text-{i}")
+
+        # Cache should be capped at 128
+        assert len(engine._embedding_cache) == 128
+        # The first entry (text-0) should have been evicted
+        assert "text-0" not in engine._embedding_cache
+        # The last entry (text-128) should be present
+        assert "text-128" in engine._embedding_cache
+
+    def test_clear_embedding_cache(self, test_config, mock_embedding):
+        """Test that clear_embedding_cache clears the cache and resets counters."""
+        engine = ContextEngine(
+            config=test_config,
+            embedding_provider=mock_embedding,
+            auto_init=False,
+        )
+
+        # Add some entries
+        engine._embed("text one")
+        engine._embed("text two")
+        engine._embed("text one")  # This should be a cache hit
+
+        assert len(engine._embedding_cache) == 2
+        assert engine._cache_hits == 1
+        assert engine._cache_misses == 2
+
+        engine.clear_embedding_cache()
+
+        assert len(engine._embedding_cache) == 0
+        assert engine._cache_hits == 0
+        assert engine._cache_misses == 0
+
+        # After clearing, provider should be called again
+        engine._embed("text one")
+        assert mock_embedding.embed.call_count == 3  # 2 from before clear + 1 new
+
+    def test_embedding_cache_stats(self, test_config, mock_embedding):
+        """Test that embedding_cache_stats returns correct counts."""
+        engine = ContextEngine(
+            config=test_config,
+            embedding_provider=mock_embedding,
+            auto_init=False,
+        )
+
+        # 2 misses (new texts), 2 hits (cached texts)
+        engine._embed("alpha")
+        engine._embed("beta")
+        engine._embed("alpha")  # hit
+        engine._embed("beta")   # hit
+
+        stats = engine.embedding_cache_stats
+        assert stats["hits"] == 2
+        assert stats["misses"] == 2
+        assert stats["size"] == 2
+        assert stats["enabled"] is True
+
+
+class TestPrecomputedEmbedding:
+    """Test precomputed_embedding parameter in get_context()."""
+
+    def test_get_context_with_precomputed_embedding(self, test_config, mock_embedding):
+        """Test that providing a precomputed embedding skips _embed()."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = [
+                (1, "doc1", "Test memory content", "test", "source", datetime.now(), 5.0, 0.85)
+            ]
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False,
+            )
+
+            precomputed = [0.1] * 768
+            context = engine.get_context(
+                "What was I working on?",
+                precomputed_embedding=precomputed,
+            )
+
+            # The provider's embed() should NOT have been called
+            mock_embedding.embed.assert_not_called()
+            assert "Test memory content" in context
+
+    def test_precomputed_embedding_none_calls_embed(self, test_config, mock_embedding):
+        """Test that precomputed_embedding=None still calls _embed()."""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_conn = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.fetchall.return_value = []
+            mock_conn.cursor.return_value = mock_cur
+            mock_connect.return_value = mock_conn
+
+            engine = ContextEngine(
+                config=test_config,
+                embedding_provider=mock_embedding,
+                auto_init=False,
+            )
+
+            context = engine.get_context(
+                "What was I working on?",
+                precomputed_embedding=None,
+            )
+
+            # The provider's embed() SHOULD have been called
+            mock_embedding.embed.assert_called_once()

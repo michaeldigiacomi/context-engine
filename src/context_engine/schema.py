@@ -2,9 +2,13 @@
 Database schema management for context engine.
 """
 
+import logging
+
 import psycopg2
 from typing import Optional
 from context_engine.config import ContextEngineConfig
+
+logger = logging.getLogger(__name__)
 
 
 class SchemaManager:
@@ -45,7 +49,7 @@ class SchemaManager:
             )
             if not cur.fetchone():
                 cur.execute(f'CREATE DATABASE "{self.config.db_name}"')
-                print(f"Created database: {self.config.db_name}")
+                logger.info(f"Created database: {self.config.db_name}")
                 created = True
             else:
                 created = False
@@ -54,7 +58,7 @@ class SchemaManager:
             conn.close()
             return created
         except psycopg2.Error as e:
-            print(f"Error creating database: {e}")
+            logger.error(f"Error creating database: {e}")
             return False
 
     def ensure_schema(self, run_migrations: bool = True) -> bool:
@@ -116,7 +120,7 @@ class SchemaManager:
                     "INSERT INTO _schema_migrations (name) VALUES (%s)",
                     (mf,)
                 )
-                print(f"Applied migration: {mf}")
+                logger.info(f"Applied migration: {mf}")
 
             conn.commit()
             cur.close()
@@ -124,7 +128,7 @@ class SchemaManager:
             return True
 
         except psycopg2.Error as e:
-            print(f"Migration error: {e}")
+            logger.error(f"Migration error: {e}")
             return False
 
     def _ensure_inline_schema(self) -> bool:
@@ -174,7 +178,39 @@ class SchemaManager:
                         ON memories USING ivfflat (embedding vector_cosine_ops)
                 """)
 
-                print("Created memories table")
+                logger.info("Created memories table")
+
+                # Create relationships table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS relationships (
+                        id SERIAL PRIMARY KEY,
+                        source_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+                        target_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+                        rel_type VARCHAR(50) NOT NULL DEFAULT 'related_to',
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(source_id, target_id, rel_type)
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_relationships_source
+                        ON relationships (source_id)
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_relationships_target
+                        ON relationships (target_id)
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_relationships_type
+                        ON relationships (rel_type)
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_relationships_source_type
+                        ON relationships (source_id, rel_type)
+                """)
+
+                logger.info("Created relationships table")
+
                 conn.commit()
 
             cur.close()
@@ -182,7 +218,7 @@ class SchemaManager:
             return True
 
         except psycopg2.Error as e:
-            print(f"Schema error: {e}")
+            logger.error(f"Schema error: {e}")
             return False
 
     def verify_connection(self) -> tuple[bool, Optional[str]]:
@@ -255,7 +291,7 @@ class SchemaManager:
             conn.commit()
             return True
         except psycopg2.Error as e:
-            print(f"Working schema error: {e}")
+            logger.error(f"Working schema error: {e}")
             return False
         finally:
             if cur:

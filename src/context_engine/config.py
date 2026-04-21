@@ -105,10 +105,17 @@ class ContextEngineConfig:
 
     @property
     def conn_string(self) -> str:
-        """Build PostgreSQL connection string."""
+        """Build PostgreSQL connection string (with real password for psycopg2)."""
         return (
-            f"postgresql://{self.db_user}:{self.db_pass}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+            f"postgresql://{self.db_user}:{self.db_pass}@{self.db_host}:{self.db_port}/{self.db_name}"
+            f"?sslmode={self.db_sslmode}"
+        )
+
+    @property
+    def conn_string_safe(self) -> str:
+        """Build PostgreSQL connection string with masked password (for logging)."""
+        return (
+            f"postgresql://{self.db_user}:***@{self.db_host}:{self.db_port}/{self.db_name}"
             f"?sslmode={self.db_sslmode}"
         )
 

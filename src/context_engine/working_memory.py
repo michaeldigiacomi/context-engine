@@ -1,11 +1,14 @@
 """Working memory - session-scoped, fast-access storage."""
 
 import json
+import logging
 import uuid
 import psycopg2
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from context_engine.config import ContextEngineConfig
+
+logger = logging.getLogger(__name__)
 
 
 class WorkingMemory:
@@ -52,7 +55,7 @@ class WorkingMemory:
                 conn.commit()
             elif count >= self.SOFT_LIMIT:
                 # Just log warning
-                print(f"Warning: Working memory at {count}/{self.HARD_LIMIT} items")
+                logger.warning(f"Working memory at {count}/{self.HARD_LIMIT} items")
         finally:
             cur.close()
 
