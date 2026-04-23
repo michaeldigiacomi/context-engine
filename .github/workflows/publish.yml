@@ -1,114 +1,114 @@
-name: Publish to PyPI
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    name: Build distribution packages
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-
-      - name: Build package
-        run: python -m build
-
-      - name: Check package with twine
-        run: |
-          pip install twine
-          twine check dist/*
-
-      - name: Store the distribution packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-
-  publish-to-pypi:
-    name: Publish to PyPI
-    needs: [build]
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/context-engine
-
-    steps:
-      - name: Download all dists
-        uses: actions/download-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: true
-
-  github-release:
-    name: Create GitHub Release
-    needs: [build, publish-to-pypi]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all dists
-        uses: actions/download-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: dist/*
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
-
-  test-install:
-    name: Test installation
-    needs: [publish-to-pypi]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11', '3.12', '3.13']
-
-    steps:
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Test installation from PyPI
-        run: |
-          python -m pip install --upgrade pip
-          pip install context-engine
-          python -c "import context_engine; print('context-engine imported successfully')"
-          ctx-engine --help
-
-      - name: Test dev dependencies install
-        run: |
-          pip install context-engine[dev]
-          ctx-engine --help
+     1|name: Publish to PyPI
+     2|
+     3|on:
+     4|  push:
+     5|    tags:
+     6|      - 'v*'
+     7|
+     8|permissions:
+     9|  contents: read
+    10|
+    11|jobs:
+    12|  build:
+    13|    name: Build distribution packages
+    14|    runs-on: ubuntu-latest
+    15|
+    16|    steps:
+    17|      - name: Checkout code
+    18|        uses: actions/checkout@v4
+    19|
+    20|      - name: Set up Python
+    21|        uses: actions/setup-python@v5
+    22|        with:
+    23|          python-version: '3.11'
+    24|
+    25|      - name: Install build dependencies
+    26|        run: |
+    27|          python -m pip install --upgrade pip
+    28|          pip install build
+    29|
+    30|      - name: Build package
+    31|        run: python -m build
+    32|
+    33|      - name: Check package with twine
+    34|        run: |
+    35|          pip install twine
+    36|          twine check dist/*
+    37|
+    38|      - name: Store the distribution packages
+    39|        uses: actions/upload-artifact@v4
+    40|        with:
+    41|          name: python-package-distributions
+    42|          path: dist/
+    43|
+    44|  publish-to-pypi:
+    45|    name: Publish to PyPI
+    46|    needs: [build]
+    47|    runs-on: ubuntu-latest
+    48|    environment:
+    49|      name: pypi
+    50|      url: https://pypi.org/p/context-engine
+    51|
+    52|    steps:
+    53|      - name: Download all dists
+    54|        uses: actions/download-artifact@v4
+    55|        with:
+    56|          name: python-package-distributions
+    57|          path: dist/
+    58|
+    59|      - name: Publish to PyPI
+    60|        uses: pypa/gh-action-pypi-publish@release/v1
+    61|        with:
+    62|          password: ${{ secrets.PYPI_API_TOKEN }}
+    63|          skip-existing: true
+    64|
+    65|  github-release:
+    66|    name: Create GitHub Release
+    67|    needs: [build, publish-to-pypi]
+    68|    runs-on: ubuntu-latest
+    69|    permissions:
+    70|      contents: write
+    71|
+    72|    steps:
+    73|      - name: Checkout code
+    74|        uses: actions/checkout@v4
+    75|
+    76|      - name: Download all dists
+    77|        uses: actions/download-artifact@v4
+    78|        with:
+    79|          name: python-package-distributions
+    80|          path: dist/
+    81|
+    82|      - name: Create GitHub Release
+    83|        uses: softprops/action-gh-release@v1
+    84|        with:
+    85|          files: dist/*
+    86|          generate_release_notes: true
+    87|          draft: false
+    88|          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+    89|
+    90|  test-install:
+    91|    name: Test installation
+    92|    needs: [publish-to-pypi]
+    93|    runs-on: ubuntu-latest
+    94|    strategy:
+    95|      matrix:
+    96|        python-version: ['3.11', '3.12', '3.13']
+    97|
+    98|    steps:
+    99|      - name: Set up Python ${{ matrix.python-version }}
+   100|        uses: actions/setup-python@v5
+   101|        with:
+   102|          python-version: ${{ matrix.python-version }}
+   103|
+   104|      - name: Test installation from PyPI
+   105|        run: |
+   106|          python -m pip install --upgrade pip
+   107|          pip install context-engine
+   108|          python -c "import context_engine; print('context-engine imported successfully')"
+   109|          ctx-engine --help
+   110|
+   111|      - name: Test dev dependencies install
+   112|        run: |
+   113|          pip install context-engine[dev]
+   114|          ctx-engine --help
